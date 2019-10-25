@@ -2,9 +2,12 @@ import java.util
 
 import com.alibaba.fastjson.{JSON, JSONObject}
 import org.apache.spark.ml.recommendation.{ALS, ALSModel}
-import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession, functions}
+import org.apache.spark.sql.{DataFrame, Dataset, Row, SaveMode, SparkSession, functions}
 
 import scala.collection.mutable.ListBuffer
+import scalikejdbc._
+import scalikejdbc.config._
+
 
 
 object Recommend {
@@ -72,7 +75,7 @@ object Recommend {
       (i,id)
     }).toDF("int_id", "uu_id")
     SaveData_id.createOrReplaceTempView("UserID")
-    SaveData_id.write.json(ID_Path)
+    SaveData_id.write.mode(SaveMode.Overwrite).json(ID_Path)
     i = 0
     val SaveData_tag = UserData.select("tag").distinct().rdd.map(row => {
       val tag = row.getString(0)
@@ -80,7 +83,7 @@ object Recommend {
       (i,tag)
     }).toDF("int_id", "uu_id")
     SaveData_tag.createOrReplaceTempView("TagID")
-    SaveData_tag.write.json(Tag_Path)
+    SaveData_tag.write.mode(SaveMode.Overwrite).json(Tag_Path)
 
 
     //替换原表，生成训练集
@@ -88,9 +91,12 @@ object Recommend {
 //    UserTrainning.show()
 
     val Array(training, test) = UserTrainning.randomSplit(Array(0.8, 0.2))
-    val alsExplicit = new ALS().setMaxIter(10).setRegParam(0.01).setUserCol("id"). setItemCol("tag").setRatingCol("score")
+    val alsExplicit = new ALS().setMaxIter(20).setRegParam(0.01).setUserCol("id"). setItemCol("tag").setRatingCol("score")
     val model: ALSModel = alsExplicit.fit(training)
-    model.save(Model_Path)
+    model.write.overwrite().save(Model_Path)
+    model.setColdStartStrategy("drop")
+    val frame: DataFrame = model.recommendForAllUsers(50)
+    frame.write.mode(SaveMode.Overwrite).json("hdfs://10.10.10.233:9000/YouLiaoData/Rec_res/")
 
 //    val predictionsExplicit = modelExplicit.transform(test)
 //    predictionsExplicit.show()
@@ -125,6 +131,24 @@ object Recommend {
 
 
   }
+
+  def MysqlTest(spark: SparkSession,ID_Path:String,Tag_Path:String):DataFrame={
+    case class Employer(name: String, age: Int, salary: Long)
+    var ID= spark.read.json(ID_Path)
+    var Tag= spark.read.json(Tag_Path)
+    ID.show()
+    Tag.show()
+    Tag.createOrReplaceTempView("Tag_ori")
+
+
+    DBs.setup()
+    val config = DBs.config
+
+
+    null
+
+  }
+
 
   def main(args: Array[String]): Unit = {
     //配置spark
@@ -165,10 +189,11 @@ object Recommend {
 //    HotNews_res.show(TopN_HotNews)
 
 //    UserCF_Train(spark,UserProfile_Path,Model_Path,ID_Path,Tag_Path)
-    var CF_res = UserCF_Predict(spark,Model_Path,ID_Path,Tag_Path,TopN_User,UserID="5d40dd11ac0244003501dfd0")
-    CF_res.show()
+//    var CF_res = UserCF_Predict(spark,Model_Path,ID_Path,Tag_Path,TopN_User,UserID="5d40dd11ac0244003501dfd0")
+//    CF_res.show()
 
-//    User_res.show(TopK_UserTitle)
+    var test = MysqlTest(spark,ID_Path,Tag_Path)
+    //    User_res.show(TopK_UserTitle)
 
 
     spark.close()
