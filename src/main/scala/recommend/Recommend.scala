@@ -136,13 +136,45 @@ object Recommend {
     case class Employer(name: String, age: Int, salary: Long)
     var ID= spark.read.json(ID_Path)
     var Tag= spark.read.json(Tag_Path)
+    val userRecs = spark.read.json("hdfs://10.10.10.233:9000/YouLiaoData/Rec_res/")
+
     ID.show()
+    ID.createOrReplaceTempView("ID_ori")
     Tag.show()
     Tag.createOrReplaceTempView("Tag_ori")
 
+    userRecs.show()
+    userRecs.printSchema()
 
-    DBs.setup()
-    val config = DBs.config
+    import spark.implicits._
+    val temp = userRecs.withColumn("tup", functions.explode(functions.col("recommendations")))
+      .rdd.map(row => {
+      val row0 = row.getLong(0)
+      val row1 = row.getStruct(2)
+      (row0,row1.getLong(1),row1.getDouble(0))
+    }).toDF("user_id", "tag_id", "score")
+    temp.createOrReplaceTempView("tagTable")
+    temp.show()
+    val TagRes: DataFrame = spark
+      .sql("select u.uu_id uuid,t.uu_id tag,score from tagTable join Tag_ori t on tagTable.tag_id = t.int_id join ID_ori u on tagTable.user_id = u.int_id")
+        .rdd.map(row => (row.getString(0),row.getString(1))).groupByKey().map(row => (row._1,row._2.mkString(","))).toDF("Uuid","Tags")
+
+    TagRes.show(3,false)
+    TagRes.printSchema()
+
+//    temp.show(false)
+//    temp.printSchema()
+////
+    val prop = new java.util.Properties
+    prop.setProperty("user", "root")
+    prop.setProperty("password", "password")
+////
+    TagRes.write.mode(SaveMode.Overwrite).jdbc("jdbc:mysql://10.10.10.198:3306/Youliao?", "Recommend_res", prop)
+
+
+//    DBs.setup()
+//    val config = DBs.config
+
 
 
     null
