@@ -157,7 +157,7 @@ object Recommend {
     temp.show()
     val TagRes: DataFrame = spark
       .sql("select u.uu_id uuid,t.uu_id tag,score from tagTable join Tag_ori t on tagTable.tag_id = t.int_id join ID_ori u on tagTable.user_id = u.int_id")
-        .rdd.map(row => (row.getString(0),row.getString(1))).groupByKey().map(row => (row._1,row._2.mkString(","))).toDF("Uuid","Tags")
+        .rdd.map(row => (row.getString(0),row.getString(1))).groupByKey().map(row => (row._1,row._2.take(50).mkString(","))).toDF("Uuid","Tags")
 
     TagRes.show(3,false)
     TagRes.printSchema()
@@ -169,7 +169,7 @@ object Recommend {
     prop.setProperty("user", "root")
     prop.setProperty("password", "password")
 ////
-    TagRes.write.mode(SaveMode.Overwrite).jdbc("jdbc:mysql://10.10.10.198:3306/Youliao?", "Recommend_res", prop)
+    TagRes.write.mode(SaveMode.Overwrite).jdbc("jdbc:mysql://172.16.100.198:3306/YouLiao?useUnicode=true&characterEncoding=utf8", "Recommend_res", prop)
 
 
 //    DBs.setup()
