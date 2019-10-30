@@ -34,7 +34,7 @@ object Recommend {
     res
   }
 
-  def UserCF_Train(spark: SparkSession, UserProfile_Path:String,Model_Path:String,ID_Path:String,Tag_Path:String): Unit ={
+  def UserCF_Train(spark: SparkSession, UserProfile_Path:String,Model_Path:String,ID_Path:String,Tag_Path:String,topN:Int = 50): Unit ={
     /**
      * 输入用户画像结果，用户ID，最终TopN相似文章的数量，topK相似用户的数量
      * 用户相似度，取得最相似N个用户的行为文章tag
@@ -95,10 +95,37 @@ object Recommend {
     val model: ALSModel = alsExplicit.fit(training)
     model.write.overwrite().save(Model_Path)
     model.setColdStartStrategy("drop")
-    val frame: DataFrame = model.recommendForAllUsers(50)
-    frame.write.mode(SaveMode.Overwrite).json("hdfs://10.10.10.233:9000/YouLiaoData/Rec_res/")
+    val frame: DataFrame = model.recommendForAllUsers(topN)
+//    frame.write.mode(SaveMode.Overwrite).json("hdfs://10.10.10.233:9000/YouLiaoData/Rec_res/")
+    frame.show()
+    frame.printSchema()
+//
+    import spark.implicits._
+    val temp = frame.withColumn("tup", functions.explode(functions.col("recommendations")))
+      .rdd.map(row => {
+      val row0 = row.getInt(0)
+      val row1 = row.getStruct(2)
+      (row0,row1.getInt(0),row1.getFloat(1))
+    }).toDF("user_id", "tag_id", "score")
+    temp.createOrReplaceTempView("tagTable")
+    temp.show()
+//
+    val TagRes: DataFrame = spark
+      .sql("select u.uu_id uuid,t.uu_id tag,score from tagTable join TagID t on tagTable.tag_id = t.int_id join UserID u on tagTable.user_id = u.int_id")
+      .rdd.map(row => (row.getString(0),row.getString(1))).groupByKey().map(row => (row._1,row._2.take(topN).mkString(","))).toDF("Uuid","Tags")
+//
+    TagRes.show(3,false)
+    TagRes.printSchema()
+//
 
-//    val predictionsExplicit = modelExplicit.transform(test)
+//    ////
+    val prop = new java.util.Properties
+    prop.setProperty("user", "root")
+    prop.setProperty("password", "password")
+    ////
+    TagRes.write.mode(SaveMode.Overwrite).jdbc("jdbc:mysql://172.16.100.198:3306/YouLiao?useUnicode=true&characterEncoding=utf8", "Recommend_res", prop)
+
+    //    val predictionsExplicit = modelExplicit.transform(test)
 //    predictionsExplicit.show()
   }
 
@@ -194,7 +221,7 @@ object Recommend {
     val ID_Path = "hdfs://10.10.10.233:9000/YouLiaoData/ID/" //args(6)
     val Tag_Path = "hdfs://10.10.10.233:9000/YouLiaoData/TAG/"//args(7)
     var TopN_HotNews = 50 //args(8)
-    var TopN_User = 50 //args(9)
+    var TopN_User = 30 //args(9)
     var TopK_UserTitle = 10 //args(10)
 
 
@@ -220,11 +247,11 @@ object Recommend {
 //    var HotNews_res = HotNews(spark,HotNews_path,TopN_HotNews)
 //    HotNews_res.show(TopN_HotNews)
 
-//    UserCF_Train(spark,UserProfile_Path,Model_Path,ID_Path,Tag_Path)
+    UserCF_Train(spark,UserProfile_Path,Model_Path,ID_Path,Tag_Path,TopN_User)
 //    var CF_res = UserCF_Predict(spark,Model_Path,ID_Path,Tag_Path,TopN_User,UserID="5d40dd11ac0244003501dfd0")
 //    CF_res.show()
 
-    var test = MysqlTest(spark,ID_Path,Tag_Path)
+//    var test = MysqlTest(spark,ID_Path,Tag_Path)
     //    User_res.show(TopK_UserTitle)
 
 
